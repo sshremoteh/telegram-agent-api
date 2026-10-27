@@ -1,0 +1,15 @@
+[Unit]
+Description=Local Telegram Agent API Service
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/root/anti/teleapi/telegram-agent-api
+ExecStart=/root/anti/teleapi/telegram-agent-api/.venv/bin/python /root/anti/teleapi/telegram-agent-api/server.py
+Restart=on-failure
+RestartSec=5
+UMask=0077
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=default.target
