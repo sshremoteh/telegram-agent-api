@@ -87,7 +87,16 @@ async def run_auth() -> int:
     ensure_secure_data_dir(session_path)
 
     print("Инициализация клиента Telegram...")
-    client = TelegramClient(session_path, api_id, api_hash)
+    client = TelegramClient(
+        session_path,
+        api_id,
+        api_hash,
+        device_model="Desktop",
+        system_version="Linux",
+        app_version="5.4.1",
+        lang_code="ru",
+        system_lang_code="ru"
+    )
     await client.connect()
 
     try:
@@ -111,11 +120,34 @@ async def run_auth() -> int:
                 return 1
 
         print(f"Отправка запроса на авторизацию для {phone}...")
-        await client.send_code_request(phone)
+        sent_code = await client.send_code_request(phone)
+        
+        # Информирование о способе доставки кода
+        code_type = type(sent_code.type).__name__
+        print("\n" + "-" * 50)
+        if code_type == "SentCodeTypeApp":
+            print(">> Код отправлен в приложение Telegram (в чат 'Telegram' со служебными уведомлениями).")
+            print(">> Проверьте официальное приложение Telegram на смартфоне или ПК!")
+        elif code_type == "SentCodeTypeSms":
+            print(">> Код отправлен по СМС на номер телефона.")
+        elif code_type == "SentCodeTypeEmailCode":
+            pattern = getattr(sent_code.type, "email_pattern", "скрыт")
+            print(f">> Код отправлен на привязанную электронную почту (Email: {pattern}).")
+            print(">> Проверьте входящие и папку 'Спам' в вашей почте!")
+        elif code_type == "SentCodeTypeCall":
+            print(">> Ожидайте телефонный звонок (робот продиктует код).")
+        elif code_type == "SentCodeTypeFragmentSms":
+            print(">> Номер привязан к Fragment, проверьте платформу Fragment.")
+        else:
+            print(f">> Способ доставки кода: {code_type}")
+        
+        if getattr(sent_code, "timeout", None):
+            print(f">> Время действия кода: {sent_code.timeout} сек.")
+        print("-" * 50 + "\n")
 
         code = input("Введите код подтверждения из Telegram: ").strip()
         try:
-            await client.sign_in(phone, code)
+            await client.sign_in(phone, code, phone_code_hash=sent_code.phone_code_hash)
         except errors.SessionPasswordNeededError:
             print("Требуется пароль двухфакторной аутентификации (2FA).")
             pwd = getpass.getpass("Введите 2FA пароль: ")
