@@ -18,6 +18,7 @@ from fastapi.responses import JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
 from telethon import TelegramClient, errors
+from telethon.tl.functions.contacts import BlockRequest
 
 # Configure logging
 logging.basicConfig(
@@ -138,7 +139,16 @@ async def lifespan(app: FastAPI):
             f"Session file '{session_file}' does not exist. Please authorize first by running: python auth.py"
         )
 
-    client = TelegramClient(RESOLVED_SESSION, TELEGRAM_API_ID, TELEGRAM_API_HASH)
+    client = TelegramClient(
+        RESOLVED_SESSION,
+        TELEGRAM_API_ID,
+        TELEGRAM_API_HASH,
+        device_model="Desktop",
+        system_version="Linux",
+        app_version="5.4.1",
+        lang_code="ru",
+        system_lang_code="ru"
+    )
     await client.connect()
 
     if not await client.is_user_authorized():
@@ -192,6 +202,12 @@ class ClickButtonRequest(BaseModel):
     chat: str = Field(..., min_length=1, max_length=256, description="Chat username or ID")
     message_id: int = Field(..., ge=1, description="Message ID containing inline keyboard")
     button_index: int = Field(..., ge=0, description="0-based button index (left-to-right, top-to-bottom)")
+
+class DeleteDialogRequest(BaseModel):
+    chat: str = Field(..., min_length=1, max_length=256, description="Username, chat ID or phone")
+
+class BlockUserRequest(BaseModel):
+    chat: str = Field(..., min_length=1, max_length=256, description="Username, chat ID or phone")
 
 # Endpoints
 @app.get("/health", dependencies=[Depends(verify_token)])
@@ -407,6 +423,38 @@ async def search_messages(
         raise HTTPException(status_code=404, detail=f"Chat not found: {chat}")
     except errors.RPCError as e:
         logger.error("RPC error in search: %s", type(e).__name__)
+        raise HTTPException(status_code=502, detail=f"Telegram RPC error: {type(e).__name__}")
+
+@app.post("/dialog/delete", dependencies=[Depends(verify_token)])
+async def delete_dialog(req: DeleteDialogRequest):
+    if not telegram_client:
+        raise HTTPException(status_code=503, detail="Telegram client not initialized")
+    target = parse_chat_target(req.chat)
+    try:
+        async with telegram_lock:
+            entity = await telegram_client.get_entity(target)
+            await telegram_client.delete_dialog(entity)
+        return {"status": "deleted", "chat": req.chat}
+    except (ValueError, errors.UsernameNotOccupiedError, errors.UsernameInvalidError):
+        raise HTTPException(status_code=404, detail=f"Chat not found: {req.chat}")
+    except errors.RPCError as e:
+        logger.error("RPC error in delete_dialog: %s", type(e).__name__)
+        raise HTTPException(status_code=502, detail=f"Telegram RPC error: {type(e).__name__}")
+
+@app.post("/user/block", dependencies=[Depends(verify_token)])
+async def block_user(req: BlockUserRequest):
+    if not telegram_client:
+        raise HTTPException(status_code=503, detail="Telegram client not initialized")
+    target = parse_chat_target(req.chat)
+    try:
+        async with telegram_lock:
+            entity = await telegram_client.get_entity(target)
+            await telegram_client(BlockRequest(id=entity))
+        return {"status": "blocked", "chat": req.chat}
+    except (ValueError, errors.UsernameNotOccupiedError, errors.UsernameInvalidError):
+        raise HTTPException(status_code=404, detail=f"User not found: {req.chat}")
+    except errors.RPCError as e:
+        logger.error("RPC error in block_user: %s", type(e).__name__)
         raise HTTPException(status_code=502, detail=f"Telegram RPC error: {type(e).__name__}")
 
 if __name__ == "__main__":

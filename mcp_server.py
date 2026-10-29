@@ -194,5 +194,27 @@ async def telegram_search(chat: str, query: str, limit: int = 20) -> Dict[str, A
         timeout=30.0
     )
 
+@mcp.tool()
+async def telegram_delete_dialog(chat: str) -> Dict[str, Any]:
+    """Delete a dialog or leave a chat/channel.
+    
+    Args:
+        chat: Target chat identifier (username, phone number, or chat ID).
+    """
+    if not chat or not chat.strip():
+        return {"error": "chat cannot be empty"}
+    return await _request("POST", "/dialog/delete", json_data={"chat": chat.strip()}, timeout=30.0)
+
+@mcp.tool()
+async def telegram_block_user(chat: str) -> Dict[str, Any]:
+    """Block a user or bot in Telegram.
+    
+    Args:
+        chat: Target user or bot identifier (username, phone number, or ID).
+    """
+    if not chat or not chat.strip():
+        return {"error": "chat cannot be empty"}
+    return await _request("POST", "/user/block", json_data={"chat": chat.strip()}, timeout=30.0)
+
 if __name__ == "__main__":
     mcp.run(transport="stdio")

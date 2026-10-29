@@ -26,8 +26,22 @@ from server import (
     SendMessageRequest,
     WaitMessageRequest,
     ClickButtonRequest,
+    DeleteDialogRequest,
+    BlockUserRequest,
     API_TOKEN,
 )
+
+def test_delete_and_block_request_validation():
+    """Verify DeleteDialogRequest and BlockUserRequest models."""
+    del_req = DeleteDialogRequest(chat="@testchat")
+    assert del_req.chat == "@testchat"
+    with pytest.raises(ValidationError):
+        DeleteDialogRequest(chat="")
+
+    block_req = BlockUserRequest(chat="123456")
+    assert block_req.chat == "123456"
+    with pytest.raises(ValidationError):
+        BlockUserRequest(chat="")
 
 def test_loopback_validation():
     """Verify that loopback detection correctly accepts localhost and rejects external IPs."""
