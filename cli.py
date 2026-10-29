@@ -168,7 +168,10 @@ def stop_server():
     if not pid:
         console.print("[yellow]Сервер не запущен.[/yellow]")
         return
-    subprocess.run(["pkill", "-f", "python.*server.py"])
+    try:
+        os.kill(pid, 15)
+    except OSError:
+        subprocess.run(["pkill", "-f", "python.*[ /]server\\.py"])
     time.sleep(1)
     console.print("[bold green]Сервер остановлен.[/bold green]")
 
