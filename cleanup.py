@@ -7,9 +7,12 @@ import asyncio
 import os
 import sys
 from pathlib import Path
+from typing import Optional
 from dotenv import load_dotenv
 from telethon import TelegramClient, errors
 from telethon.tl.functions.contacts import BlockRequest
+
+import account_manager
 
 BASE_DIR = Path(__file__).resolve().parent
 ENV_PATH = BASE_DIR / ".env"
@@ -17,25 +20,29 @@ ENV_PATH = BASE_DIR / ".env"
 if ENV_PATH.exists():
     load_dotenv(dotenv_path=ENV_PATH)
 
-API_ID_STR = os.getenv("TELEGRAM_API_ID", "").strip()
-API_HASH = os.getenv("TELEGRAM_API_HASH", "").strip()
-SESSION = os.getenv("TELEGRAM_SESSION", "./data/telegram").strip()
+DEFAULT_API_ID_STR = os.getenv("TELEGRAM_API_ID", "").strip()
+DEFAULT_API_HASH = os.getenv("TELEGRAM_API_HASH", "").strip()
 
-session_p = Path(SESSION)
-if not session_p.is_absolute():
-    RESOLVED_SESSION = str((BASE_DIR / session_p).resolve())
-else:
-    RESOLVED_SESSION = str(session_p.resolve())
+async def main(target_alias: Optional[str] = None):
+    acc = account_manager.get_account(target_alias)
+    if not acc:
+        print(f"Error: Account '{target_alias or 'active'}' not found in registry.")
+        return
 
-async def main():
-    if not API_ID_STR or not API_HASH:
+    alias = acc["alias"]
+    session_path = account_manager.get_session_path(acc["session_name"])
+    api_id = acc.get("api_id") or (int(DEFAULT_API_ID_STR) if DEFAULT_API_ID_STR.isdigit() else None)
+    api_hash = acc.get("api_hash") or DEFAULT_API_HASH
+
+    if not api_id or not api_hash:
         print("Error: API credentials missing in .env")
         return
 
+    print(f"Starting cleanup for account '{alias}'...")
     client = TelegramClient(
-        RESOLVED_SESSION,
-        int(API_ID_STR),
-        API_HASH,
+        session_path,
+        api_id,
+        api_hash,
         device_model="Desktop",
         system_version="Linux",
         app_version="5.4.1",
@@ -111,4 +118,5 @@ async def main():
     await client.disconnect()
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    alias_arg = sys.argv[1].strip() if len(sys.argv) > 1 else None
+    asyncio.run(main(target_alias=alias_arg))
