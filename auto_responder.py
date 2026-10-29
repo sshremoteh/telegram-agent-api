@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """
-Background Auto-Responder for @sinorias.
-Monitors chat history and handles negotiation automatically.
+Stateful Negotiation & Auto-Responder Agent for Telegram Sales.
+Maintains dialogue state and handles objections, bargains, and payment requests naturally.
 """
 import asyncio
 import logging
 import os
+import re
 import sys
 from pathlib import Path
 from dotenv import load_dotenv
@@ -34,103 +35,77 @@ API_TOKEN = os.getenv("API_TOKEN", "").strip()
 BASE_URL = f"http://{API_HOST}:{API_PORT}"
 TARGET_CHAT = "sinorias"
 
-def generate_counter_pitch(incoming_text: str) -> str:
-    text_lower = incoming_text.lower()
-    
-    # Negative responses: "не хочу", "не надо", "нет", "отстань", etc.
-    if any(w in text_lower for w in ["не хочу", "не надо", "нет", "зачем", "нафиг", "отвали", "пофиг", "неинтересно"]):
-        return (
-            "Да брось, это не очередная спам-тема или бесполезная подписка. "
-            "MCP дает прямой мост между твоей телегой и ИИ (Claude / ChatGPT / Antigravity). "
-            "Агент может сам мониторить каналы, делать выжимки, фильтровать спам и отвечать по сценариям, "
-            "пока ты занят другими делами. Экономит кучу времени. "
-            "Хочешь, просто покажу демку вживую — сам увидишь, как это ускоряет работу?"
-        )
-    
-    # Price inquiry
-    if any(w in text_lower for w in ["сколько", "почем", "цена", "стоит", "прайс", "рубл", "usdt", "$"]):
-        return (
-            "По цене договоримся чисто символически, отдам со скидкой и помогу развернуть всё под ключ за 10 минут. "
-            "Тебе в первую очередь для каких задач — автоматизация переписок, парсинг каналов или свои боты?"
-        )
-    
-    # What is it / details inquiry
-    if any(w in text_lower for w in ["что это", "как работает", "расскажи", "подробнее", "че за", "что такое"]):
-        return (
-            "Смотри: MCP (Model Context Protocol) — это открытый стандарт, который позволяет нейросети напрямую "
-            "управлять Telegram-клиентом. Ты просто пишешь ИИ задачу на обычном языке, а он сам читает нужные чаты, "
-            "собирает инфу, отправляет сообщения и кликает кнопки. Всё работает локально на твоей машине, данные никому не утекают."
-        )
-    
-    # Default persuasive reply
-    return (
-        "Понял тебя. Но штука реально уникальная: сейчас вся индустрия переходит на агентские фреймворки, "
-        "и локальный Telegram MCP — это самый простой способ заставить ИИ работать на тебя в фоне. "
-        "Если передумаешь или захочешь взглянуть на код/документацию — маякни, скину посмотреть без обязательств!"
-    )
+# Configurable payment details
+PAYMENT_REQUISITES = os.getenv("PAYMENT_REQUISITES", "СБП / Т-Банк / Сбер по номеру или USDT TRC-20")
 
-async def monitor_loop():
-    logger.info("Auto-responder started for chat: %s", TARGET_CHAT)
-    headers = {"Authorization": f"Bearer {API_TOKEN}"}
-    last_processed_id = 9138
-    
-    # First, get latest message ID to calibrate
-    async with httpx.AsyncClient(trust_env=False, timeout=20.0) as client:
-        try:
-            resp = await client.get(f"{BASE_URL}/history", headers=headers, params={"chat": TARGET_CHAT, "limit": 5})
-            if resp.status_code == 200:
-                msgs = resp.json().get("messages", [])
-                if msgs:
-                    max_id = max(m["id"] for m in msgs)
-                    last_processed_id = max(last_processed_id, max_id)
-                    logger.info("Calibrated last_processed_id to: %d", last_processed_id)
-        except Exception as e:
-            logger.error("Initial calibration error: %s", e)
+# States: PITCHING -> NEGOTIATING -> AWAITING_PAYMENT -> CLOSED
+current_state = "AWAITING_PAYMENT"
 
-    while True:
-        try:
-            async with httpx.AsyncClient(trust_env=False, timeout=25.0) as client:
-                resp = await client.get(f"{BASE_URL}/history", headers=headers, params={"chat": TARGET_CHAT, "limit": 10})
-                if resp.status_code == 200:
-                    data = resp.json()
-                    messages = data.get("messages", [])
-                    # Look for new incoming messages
-                    incoming = [m for m in messages if m["id"] > last_processed_id and not m.get("out", False)]
-                    
-                    if incoming:
-                        # Sort ascending
-                        incoming.sort(key=lambda m: m["id"])
-                        for msg in incoming:
-                            msg_id = msg["id"]
-                            msg_text = msg.get("text", "").strip()
-                            logger.info("[NEW INCOMING MESSAGE #%d]: %s", msg_id, msg_text)
-                            
-                            # Generate persuasive response
-                            reply = generate_counter_pitch(msg_text)
-                            logger.info("Sending persuasive reply to #%d...", msg_id)
-                            
-                            send_resp = await client.post(
-                                f"{BASE_URL}/send",
-                                headers=headers,
-                                json={"chat": TARGET_CHAT, "text": reply}
-                            )
-                            if send_resp.status_code == 200:
-                                sent_info = send_resp.json()
-                                logger.info("[REPLY SENT #%d]: %s", sent_info.get("id"), reply[:60] + "...")
-                                last_processed_id = max(last_processed_id, sent_info.get("id", msg_id))
-                            else:
-                                logger.error("Failed to send reply: %s", send_resp.text)
-                                last_processed_id = max(last_processed_id, msg_id)
-                    else:
-                        # Update last_processed_id to latest outgoing if any
-                        if messages:
-                            max_id = max(m["id"] for m in messages)
-                            last_processed_id = max(last_processed_id, max_id)
-                            
-        except Exception as e:
-            logger.error("Poll cycle error: %s", e)
+def analyze_intent(text: str) -> str:
+    t = text.lower()
+    
+    # Ready to pay / asking for details
+    if any(w in t for w in ["куда", "кидать", "перевод", "карту", "карта", "счет", "номер", "реквизит", "сбп", "чек", "оплат", "скинь"]):
+        return "READY_TO_PAY"
+    
+    # Bargain / price offer
+    if re.search(r'\b(\d+)\s*(доллар|бакс|\$|рубл|к|usdt)\b', t) or any(w in t for w in ["сколько", "почем", "цена", "стоит", "дорого", "скидк", "дешев"]):
+        return "PRICE_BARGAIN"
+    
+    # Acceptance
+    if any(w in t for w in ["давай", "го", "ок", "ладно", "по рукам", "согласен", "хорошо"]):
+        return "ACCEPT"
+    
+    # Questions / what is this
+    if any(w in t for w in ["что это", "как это", "зачем", "покажи", "расскажи", "как работает"]):
+        return "QUESTION_DETAILS"
+    
+    # Hard rejection
+    if any(w in t for w in ["не хочу", "не надо", "нет", "отвали", "нафиг", "бред"]):
+        return "REJECTION"
         
-        await asyncio.sleep(12)
+    return "GENERAL"
 
-if __name__ == "__main__":
-    asyncio.run(monitor_loop())
+def generate_stateful_reply(text: str) -> str:
+    global current_state
+    intent = analyze_intent(text)
+    logger.info("Detected intent: %s (Current state: %s)", intent, current_state)
+    
+    if intent == "READY_TO_PAY" or current_state == "AWAITING_PAYMENT":
+        current_state = "AWAITING_PAYMENT"
+        return (
+            f"Вот реквизиты для перевода (10$ или 1000 руб):\n\n"
+            f"💳 {PAYMENT_REQUISITES}\n\n"
+            f"Как переведешь — скинь скрин или чек, и я сразу пришлю ссылку на архив с проектом и помогу запустить!"
+        )
+    
+    if intent == "PRICE_BARGAIN":
+        current_state = "AWAITING_PAYMENT"
+        return (
+            "По рукам, договорились за 10$ (1000 руб)! "
+            "Отдаю полный доступ к репозиторию и настрою под тебя. "
+            "Куда удобнее перевести — на карту (СБП) или криптой (USDT / TON)?"
+        )
+        
+    if intent == "ACCEPT":
+        current_state = "AWAITING_PAYMENT"
+        return (
+            "Отлично! Можешь перевести 1000 руб на карту (СБП) или 10 USDT. "
+            "Напиши, какой способ удобнее, и я сразу пришлю реквизиты."
+        )
+
+    if intent == "QUESTION_DETAILS":
+        return (
+            "Смотри: этот сервер ставится локально и подключает твой Telegram к Claude, ChatGPT или Cursor через протокол MCP. "
+            "ИИ сможет читать переписки, искать инфу, отправлять сообщения и автоматизировать любые рутинные задачи. "
+            "Все работает прямо с твоего компа, безопасно и без блокировок."
+        )
+
+    if intent == "REJECTION":
+        return (
+            "Без проблем, не навязываю! Если позже понадобится автоматизировать Telegram через нейросети — напиши, всё настроим."
+        )
+
+    return (
+        "Если готов забрать сетап за 10$ — напиши, куда скинуть реквизиты (карта или крипта), и сразу начнем!"
+    )

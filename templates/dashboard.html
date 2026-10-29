@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="ru" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Telegram Agent Hub • Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: { 500: '#3b82f6', 600: '#2563eb', 700: '#1d4ed8' },
+            dark: { 800: '#1e293b', 900: '#0f172a', 950: '#020617' }
+          }
+        }
+      }
+    }
+  </script>
+</head>
+<body class="bg-dark-950 text-slate-100 min-h-screen flex flex-col font-sans">
+  <!-- Top Navigation -->
+  <header class="border-b border-slate-800 bg-dark-900/80 backdrop-blur sticky top-0 z-50 px-6 py-3 flex items-center justify-between">
+    <div class="flex items-center space-x-3">
+      <div class="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center text-white shadow-lg shadow-blue-500/20">
+        <i class="fa-brands fa-telegram text-2xl"></i>
+      </div>
+      <div>
+        <h1 class="font-bold text-lg leading-tight flex items-center gap-2">
+          Telegram Agent Hub
+          <span class="text-xs px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-normal">Active</span>
+        </h1>
+        <p class="text-xs text-slate-400">Multi-Account MTProto & MCP Control Center</p>
+      </div>
+    </div>
+    <div class="flex items-center space-x-4">
+      <div class="flex items-center bg-dark-800 rounded-lg px-3 py-1.5 border border-slate-700 text-xs">
+        <span class="text-slate-400 mr-2"><i class="fa-solid fa-key"></i> Token:</span>
+        <input type="password" id="apiTokenInput" placeholder="API_TOKEN" class="bg-transparent focus:outline-none text-slate-200 w-36">
+        <button onclick="saveToken()" class="ml-2 text-blue-400 hover:text-blue-300"><i class="fa-solid fa-check"></i></button>
+      </div>
+      <a href="https://github.com/sshremoteh/telegram-agent-api" target="_blank" class="text-slate-400 hover:text-white text-lg">
+        <i class="fa-brands fa-github"></i>
+      </a>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="flex-1 p-6 max-w-7xl mx-auto w-full grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <!-- Left Column: Accounts & Quick Actions -->
+    <div class="space-y-6">
+      <!-- Accounts Card -->
+      <div class="bg-dark-900 border border-slate-800 rounded-2xl p-5 shadow-xl">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-2">
+            <i class="fa-solid fa-users text-blue-400"></i> Аккаунты Telegram
+          </h2>
+          <button onclick="fetchAccounts()" class="text-xs text-slate-400 hover:text-white">
+            <i class="fa-solid fa-rotate-right"></i>
+          </button>
+        </div>
+        <div id="accountsList" class="space-y-2.5">
+          <div class="text-sm text-slate-500 italic py-2">Загрузка аккаунтов...</div>
+        </div>
+      </div>
+
+      <!-- Quick Sender Card -->
+      <div class="bg-dark-900 border border-slate-800 rounded-2xl p-5 shadow-xl">
+        <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-400 mb-4 flex items-center gap-2">
+          <i class="fa-solid fa-paper-plane text-emerald-400"></i> Быстрая отправка
+        </h2>
+        <div class="space-y-3">
+          <div>
+            <label class="text-xs text-slate-400 mb-1 block">Чат / Юзернейм</label>
+            <input type="text" id="targetChat" placeholder="@username или ID" class="w-full bg-dark-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none">
+          </div>
+          <div>
+            <label class="text-xs text-slate-400 mb-1 block">Сообщение</label>
+            <textarea id="messageText" rows="3" placeholder="Введите текст сообщения..." class="w-full bg-dark-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none resize-none"></textarea>
+          </div>
+          <button onclick="sendMessage()" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-medium py-2 rounded-lg text-sm transition flex items-center justify-center gap-2">
+            <i class="fa-solid fa-paper-plane"></i> Отправить
+          </button>
+        </div>
+      </div>
+
+      <!-- Clean Tools Card -->
+      <div class="bg-dark-900 border border-slate-800 rounded-2xl p-5 shadow-xl">
+        <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-400 mb-3 flex items-center gap-2">
+          <i class="fa-solid fa-shield-halved text-amber-400"></i> Управление диалогами
+        </h2>
+        <div class="flex gap-2">
+          <input type="text" id="actionChat" placeholder="@bot или ID" class="flex-1 bg-dark-800 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none">
+          <button onclick="blockChat()" class="bg-amber-600/20 hover:bg-amber-600/30 text-amber-400 border border-amber-500/30 px-3 py-1.5 rounded-lg text-xs font-medium">Блок</button>
+          <button onclick="deleteChat()" class="bg-red-600/20 hover:bg-red-600/30 text-red-400 border border-red-500/30 px-3 py-1.5 rounded-lg text-xs font-medium">Удалить</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right Column: Dialogs & History (2 cols) -->
+    <div class="lg:col-span-2 space-y-6">
+      <div class="bg-dark-900 border border-slate-800 rounded-2xl p-5 shadow-xl flex flex-col h-[750px]">
+        <div class="flex items-center justify-between pb-4 border-b border-slate-800">
+          <div>
+            <h2 class="font-bold text-base flex items-center gap-2">
+              <i class="fa-solid fa-comments text-blue-400"></i>
+              Диалоги активного аккаунта
+            </h2>
+            <p class="text-xs text-slate-400">Последние синхронизированные чаты и каналы</p>
+          </div>
+          <button onclick="fetchDialogs()" class="bg-dark-800 hover:bg-slate-700 text-xs px-3 py-1.5 rounded-lg border border-slate-700 transition flex items-center gap-1.5">
+            <i class="fa-solid fa-arrows-rotate"></i> Обновить
+          </button>
+        </div>
+
+        <div class="flex-1 overflow-y-auto mt-4 space-y-2 pr-1" id="dialogsContainer">
+          <div class="text-sm text-slate-500 italic py-6 text-center">Загрузка диалогов...</div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    let activeAccount = null;
+
+    function getHeaders() {
+      const token = localStorage.getItem('tg_agent_token') || '';
+      return {
+        'Authorization': 'Bearer ' + token,
+        'Content-Type': 'application/json'
+      };
+    }
+
+    function saveToken() {
+      const val = document.getElementById('apiTokenInput').value.trim();
+      localStorage.setItem('tg_agent_token', val);
+      alert('Токен сохранён локально');
+      fetchAccounts();
+      fetchDialogs();
+    }
+
+    async function fetchAccounts() {
+      try {
+        const res = await fetch('/accounts', { headers: getHeaders() });
+        if (res.status === 401) {
+          document.getElementById('accountsList').innerHTML = '<div class="text-xs text-amber-400">Требуется указать валидный API Token вверху страницы.</div>';
+          return;
+        }
+        const data = await res.json();
+        const container = document.getElementById('accountsList');
+        container.innerHTML = '';
+        (data.accounts || []).forEach(acc => {
+          const div = document.createElement('div');
+          div.className = `p-3 rounded-xl border flex items-center justify-between transition ${
+            acc.is_active ? 'bg-blue-600/10 border-blue-500/40' : 'bg-dark-800/60 border-slate-800 hover:border-slate-700'
+          }`;
+          div.innerHTML = `
+            <div class="flex items-center space-x-3">
+              <div class="w-9 h-9 rounded-full bg-slate-700 flex items-center justify-center font-bold text-sm text-blue-400">
+                ${(acc.first_name || acc.alias || 'T')[0].toUpperCase()}
+              </div>
+              <div>
+                <div class="text-sm font-semibold flex items-center gap-1.5">
+                  ${acc.alias}
+                  ${acc.is_active ? '<span class="text-[10px] bg-blue-500/20 text-blue-400 px-1.5 py-0.2 rounded font-mono">ACTIVE</span>' : ''}
+                </div>
+                <div class="text-xs text-slate-400">@${acc.username || 'no_user'} • ID: ${acc.user_id || '-'}</div>
+              </div>
+            </div>
+            <div>
+              ${!acc.is_active ? `<button onclick="switchAccount('${acc.alias}')" class="text-xs bg-slate-700 hover:bg-slate-600 px-2.5 py-1 rounded-lg">Выбрать</button>` : ''}
+            </div>
+          `;
+          container.appendChild(div);
+        });
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    async function switchAccount(alias) {
+      await fetch('/accounts/switch', {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({ alias })
+      });
+      fetchAccounts();
+      fetchDialogs();
+    }
+
+    async function fetchDialogs() {
+      const container = document.getElementById('dialogsContainer');
+      try {
+        const res = await fetch('/dialogs?limit=30', { headers: getHeaders() });
+        if (!res.ok) {
+          container.innerHTML = `<div class="text-center text-sm text-red-400 py-6">Ошибка загрузки диалогов (${res.status})</div>`;
+          return;
+        }
+        const data = await res.json();
+        container.innerHTML = '';
+        if (!data.dialogs || data.dialogs.length === 0) {
+          container.innerHTML = '<div class="text-center text-sm text-slate-500 py-6">Диалоги не найдены. Аккаунт чист.</div>';
+          return;
+        }
+        data.dialogs.forEach(d => {
+          const item = document.createElement('div');
+          item.className = 'p-3 rounded-xl bg-dark-800/40 hover:bg-dark-800 border border-slate-800/80 flex items-center justify-between transition';
+          let icon = '<i class="fa-solid fa-user text-slate-400"></i>';
+          if (d.is_channel) icon = '<i class="fa-solid fa-bullhorn text-sky-400"></i>';
+          else if (d.is_group) icon = '<i class="fa-solid fa-users text-purple-400"></i>';
+
+          item.innerHTML = `
+            <div class="flex items-center space-x-3">
+              <div class="w-8 h-8 rounded-lg bg-dark-950 flex items-center justify-center text-sm">
+                ${icon}
+              </div>
+              <div>
+                <div class="text-sm font-medium text-slate-200">${d.title || d.id}</div>
+                <div class="text-[11px] text-slate-400">ID: ${d.id} • ${d.date ? new Date(d.date).toLocaleString('ru-RU') : ''}</div>
+              </div>
+            </div>
+            <div class="flex items-center space-x-2">
+              <button onclick="document.getElementById('targetChat').value='${d.id}'; document.getElementById('actionChat').value='${d.id}'" class="text-xs bg-dark-700 hover:bg-slate-600 px-2.5 py-1 rounded text-slate-300">
+                Выбрать
+              </button>
+            </div>
+          `;
+          container.appendChild(item);
+        });
+      } catch (e) {
+        container.innerHTML = `<div class="text-center text-sm text-red-400 py-6">Ошибка соединения: ${e}</div>`;
+      }
+    }
+
+    async function sendMessage() {
+      const chat = document.getElementById('targetChat').value.trim();
+      const text = document.getElementById('messageText').value.trim();
+      if (!chat || !text) return alert('Заполните чат и текст');
+      const res = await fetch('/send', {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({ chat, text })
+      });
+      if (res.ok) {
+        alert('Сообщение отправлено!');
+        document.getElementById('messageText').value = '';
+        fetchDialogs();
+      } else {
+        alert('Ошибка отправки: ' + (await res.text()));
+      }
+    }
+
+    async function blockChat() {
+      const chat = document.getElementById('actionChat').value.trim();
+      if (!chat) return alert('Укажите чат/бота');
+      if (!confirm(`Заблокировать ${chat}?`)) return;
+      const res = await fetch('/user/block', {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({ chat })
+      });
+      alert(res.ok ? 'Заблокирован' : 'Ошибка');
+    }
+
+    async function deleteChat() {
+      const chat = document.getElementById('actionChat').value.trim();
+      if (!chat) return alert('Укажите чат');
+      if (!confirm(`Удалить диалог ${chat}?`)) return;
+      const res = await fetch('/dialog/delete', {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({ chat })
+      });
+      if (res.ok) {
+        alert('Удален');
+        fetchDialogs();
+      } else {
+        alert('Ошибка: ' + (await res.text()));
+      }
+    }
+
+    window.onload = () => {
+      const token = localStorage.getItem('tg_agent_token');
+      if (token) document.getElementById('apiTokenInput').value = token;
+      fetchAccounts();
+      fetchDialogs();
+    };
+  </script>
+</body>
+</html>

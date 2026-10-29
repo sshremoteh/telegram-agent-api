@@ -1,5 +1,5 @@
 """
-Telegram Authentication Script.
+Telegram Authentication Script with Multi-Account Support.
 Interactive authorization for Telethon MTProto client.
 """
 import asyncio
@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 from dotenv import load_dotenv
 from telethon import TelegramClient, errors
+import account_manager
 
 BASE_DIR = Path(__file__).resolve().parent
 ENV_PATH = BASE_DIR / ".env"
@@ -20,30 +21,13 @@ def load_config() -> dict:
     api_id_str = os.getenv("TELEGRAM_API_ID", "").strip()
     api_hash = os.getenv("TELEGRAM_API_HASH", "").strip()
     phone = os.getenv("TELEGRAM_PHONE", "").strip()
-    session_path = os.getenv("TELEGRAM_SESSION", "./data/telegram").strip()
     
     api_id = int(api_id_str) if api_id_str.isdigit() else None
-    
-    p = Path(session_path)
-    if not p.is_absolute():
-        resolved_session = str((BASE_DIR / p).resolve())
-    else:
-        resolved_session = str(p.resolve())
-        
     return {
         "api_id": api_id,
         "api_hash": api_hash,
         "phone": phone,
-        "session_path": resolved_session,
     }
-
-def ensure_secure_data_dir(session_path_str: str) -> None:
-    session_dir = Path(session_path_str).parent
-    session_dir.mkdir(parents=True, exist_ok=True)
-    try:
-        os.chmod(session_dir, 0o700)
-    except OSError:
-        pass
 
 def secure_session_files(session_path_str: str) -> None:
     session_file = Path(f"{session_path_str}.session")
@@ -59,12 +43,11 @@ def secure_session_files(session_path_str: str) -> None:
         except OSError:
             pass
 
-async def run_auth() -> int:
+async def run_auth(alias: str = "default", phone_input: str = None) -> int:
     config = load_config()
     api_id = config["api_id"]
     api_hash = config["api_hash"]
-    phone = config["phone"]
-    session_path = config["session_path"]
+    phone = phone_input or config["phone"]
     
     if not api_id or not api_hash:
         print("\n" + "=" * 60)
@@ -74,19 +57,18 @@ async def run_auth() -> int:
         print("1. Перейдите в браузере на https://my.telegram.org")
         print("2. Войдите с вашим номером телефона Telegram.")
         print("3. Откройте раздел 'API development tools'.")
-        print("4. Создайте приложение (App title и short name можно указать любые, например 'teleagent').")
+        print("4. Создайте приложение.")
         print("5. Скопируйте 'App api_id' и 'App api_hash'.")
         print(f"6. Откройте локальный файл {ENV_PATH} и укажите значения:")
         print("     TELEGRAM_API_ID=1234567")
         print("     TELEGRAM_API_HASH=0123456789abcdef0123456789abcdef")
-        print("     TELEGRAM_PHONE=+79991234567")
         print("7. Сохраните файл и запустите: python auth.py")
         print("=" * 60 + "\n")
         return 1
 
-    ensure_secure_data_dir(session_path)
+    session_path = account_manager.get_session_path(alias)
 
-    print("Инициализация клиента Telegram...")
+    print(f"\n[+] Инициализация авторизации для аккаунта: '{alias}'...")
     client = TelegramClient(
         session_path,
         api_id,
@@ -105,14 +87,22 @@ async def run_auth() -> int:
             name = f"{me.first_name or ''} {me.last_name or ''}".strip()
             username = f"@{me.username}" if me.username else "без username"
             print("\n" + "=" * 60)
-            print("Сессия уже авторизована!")
+            print(f"Сессия '{alias}' уже авторизована!")
             print(f"Пользователь: {name} (ID: {me.id}, {username})")
             print(f"Файл сессии: {session_path}.session")
             print("=" * 60)
             secure_session_files(session_path)
+            account_manager.register_account(
+                alias=alias,
+                user_id=me.id,
+                first_name=me.first_name or "",
+                username=me.username,
+                phone=phone,
+                api_id=api_id,
+                api_hash=api_hash
+            )
             return 0
 
-        # Not authorized yet
         if not phone:
             phone = input("Введите номер телефона в международном формате (+XXXXXXXXXXX): ").strip()
             if not phone:
@@ -122,7 +112,6 @@ async def run_auth() -> int:
         print(f"Отправка запроса на авторизацию для {phone}...")
         sent_code = await client.send_code_request(phone)
         
-        # Информирование о способе доставки кода
         code_type = type(sent_code.type).__name__
         print("\n" + "-" * 50)
         if code_type == "SentCodeTypeApp":
@@ -159,10 +148,19 @@ async def run_auth() -> int:
             username = f"@{me.username}" if me.username else "без username"
             print("\n" + "=" * 60)
             print("Авторизация успешно завершена!")
-            print(f"Аккаунт: {name} (ID: {me.id}, {username})")
+            print(f"Аккаунт '{alias}': {name} (ID: {me.id}, {username})")
             print(f"Файл сессии сохранён: {session_path}.session")
             print("=" * 60)
             secure_session_files(session_path)
+            account_manager.register_account(
+                alias=alias,
+                user_id=me.id,
+                first_name=me.first_name or "",
+                username=me.username,
+                phone=phone,
+                api_id=api_id,
+                api_hash=api_hash
+            )
             return 0
         else:
             print("Ошибка: авторизация не была завершена.")
@@ -175,8 +173,28 @@ async def run_auth() -> int:
         await client.disconnect()
 
 if __name__ == "__main__":
+    target_alias = "default"
+    if len(sys.argv) > 1:
+        target_alias = sys.argv[1].strip()
+    else:
+        accounts = account_manager.list_accounts()
+        if accounts:
+            print("Существующие аккаунты:")
+            for a in accounts:
+                mark = "*" if a["is_active"] else " "
+                print(f" [{mark}] {a['alias']} (ID: {a['user_id']}, @{a['username']})")
+            ans = input(f"\nВведите имя для нового или существующего аккаунта [по умолчанию: {accounts[0]['alias']}]: ").strip()
+            if ans:
+                target_alias = ans
+            else:
+                target_alias = accounts[0]['alias']
+        else:
+            ans = input("Введите имя первого аккаунта [default]: ").strip()
+            if ans:
+                target_alias = ans
+
     try:
-        exit_code = asyncio.run(run_auth())
+        exit_code = asyncio.run(run_auth(alias=target_alias))
         sys.exit(exit_code)
     except KeyboardInterrupt:
         print("\nАвторизация прервана пользователем.")
